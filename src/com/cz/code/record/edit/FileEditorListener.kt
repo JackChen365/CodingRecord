@@ -1,5 +1,6 @@
 package com.cz.code.record.edit;
 
+import com.cz.code.record.service.FileEditService
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
@@ -14,12 +15,16 @@ import com.intellij.ui.components.JBLabel
 import java.text.DecimalFormat
 import javax.swing.BorderFactory
 
-
+/**
+ * 文件编辑管理监听对象
+ */
 class FileEditorListener(private var project: Project) : FileEditorManagerListener {
     override fun selectionChanged(event: FileEditorManagerEvent) {
         super.selectionChanged(event)
         var file = event.newFile
-        println("打开${file?.name}")
+        if(null!=file){
+            FileEditService.instance.fileOpened(file)
+        }
     }
 
     override fun fileOpened(manager: FileEditorManager, file: VirtualFile) {
@@ -30,13 +35,19 @@ class FileEditorListener(private var project: Project) : FileEditorManagerListen
         if (fileEditor == null || document == null) {
             return
         }
+        // 顶部提示信息
         val label = JBLabel()
         label.border = BorderFactory.createEmptyBorder(3, 3, 3, 3)
         label.text = statusMessage(document, file)
         manager.addTopComponent(fileEditor, label)
         document.addDocumentListener(object : DocumentListener {
             override fun documentChanged(event: DocumentEvent) {
-                label.text = "file:${file.name} add:${event.newFragment} old:${event.oldFragment}"
+                //提示信息
+                val virtualFile = FileDocumentManager.getInstance().getFile(event.document)
+                if(null!=virtualFile){
+                    FileEditService.instance.fileContentChanged(virtualFile,event.newFragment,event.oldFragment)
+                }
+                //label.text = "file:${file.name} add:${event.newFragment} old:${event.oldFragment}"
             }
         }, fileEditor)
     }
@@ -52,5 +63,7 @@ class FileEditorListener(private var project: Project) : FileEditorManagerListen
 
     override fun fileClosed(source: FileEditorManager, file: VirtualFile) {
         super.fileClosed(source, file)
+        //文件关闭监听
+        FileEditService.instance.fileClosed(file)
     }
 }
