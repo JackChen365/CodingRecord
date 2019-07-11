@@ -5,18 +5,6 @@ class RecordInfo{
      * 打开时间
      */
     var startTimeMillis=0L
-//    /**
-//     * 文件关闭时间
-//     */
-//    var closeTimeMillis=0L
-//    /**
-//     * 代码时间
-//     */
-//    var codingTimeMillis=0L
-//    /**
-//     * 休息时间
-//     */
-//    var sleepTimeMillis=0L
     /**
      * 当前工作时间
      */

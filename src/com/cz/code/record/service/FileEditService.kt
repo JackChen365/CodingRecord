@@ -23,7 +23,7 @@ class FileEditService{
     /**
      * 间隔时长,停止操作超过此时长,代表暂停编码
      */
-    private var suspendTimeMillis=10*1000
+    private var suspendTimeMillis=200*1000
     /**
      * 活动时间
      */
@@ -65,7 +65,7 @@ class FileEditService{
             val recordInfo = recordItems.get(currentFile)
             if(null!=recordInfo){
                 recordInfo.addCodingTimeStep(System.currentTimeMillis())
-                println("添加编程时段:${recordInfo.stepStartTimeMillis.sign}")
+                println("file:$currentFile 添加编程时段:${recordInfo.codingTimeSteps.size}")
             }
         }
     }
@@ -96,13 +96,12 @@ class FileEditService{
         println("打开文件:${file.name}")
         var recordInfo = recordItems.get(file)
         //结束上一个文件操作
-        val currentFile=this.currentFile
-        if(null!=currentFile){
-            //当前记录对象
-            val currentRecordItem = recordItems.get(currentFile)
-            currentRecordItem?.addCodingTimeStep(System.currentTimeMillis())
-        }
-        if(null==recordInfo){
+        addCodingTimeStep()
+        //记录新的文件信息
+        if(null!=recordInfo){
+            //记录开始编程时间
+            recordInfo.startCoding()
+        } else {
             //生成记录,并保存
             recordInfo= RecordInfo()
             recordItems.put(file,recordInfo)
@@ -127,8 +126,8 @@ class FileEditService{
             //如果超时
             val currentFile=this.currentFile
             if(null!=currentFile){
-                val currentRecordItem = recordItems.get(currentFile)
                 //开始编程
+                val currentRecordItem = recordItems.get(currentFile)
                 println("开始编程")
                 currentRecordItem?.startCoding()
             }
@@ -142,8 +141,10 @@ class FileEditService{
      * 当文件关闭时
      */
     fun fileClosed(file: VirtualFile){
-        println("关闭文件:${file.name}")
-        activeTimeMillis=System.currentTimeMillis()
+        println("关闭文件:${file.name} valid:${file.isValid}")
+        val currentRecordItem = recordItems.get(file)
+        currentRecordItem?.addCodingTimeStep(System.currentTimeMillis())
+        cancelRequest(watchdogRunnable)
     }
 
     fun uninstall() {
