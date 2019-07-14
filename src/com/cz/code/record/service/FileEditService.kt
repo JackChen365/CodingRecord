@@ -3,11 +3,9 @@ package com.cz.code.record.service
 import com.cz.code.record.cancelRequest
 import com.cz.code.record.checkDispatchThread
 import com.cz.code.record.invokeLater
-import com.cz.code.record.model.RecordInfo
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.messages.MessageBusConnection
-import kotlin.math.sign
 
 /**
  * 文件编缉服务对象
@@ -23,15 +21,11 @@ class FileEditService{
     /**
      * 间隔时长,停止操作超过此时长,代表暂停编码
      */
-    private var suspendTimeMillis=200*1000
+    private var suspendTimeMillis=30*1000
     /**
      * 活动时间
      */
     private var activeTimeMillis=0L
-    /**
-     * 本次打开记录
-     */
-    private val recordItems = HashMap<VirtualFile,RecordInfo>()
     /**
      * 当前操作文件
      */
@@ -47,7 +41,7 @@ class FileEditService{
         override fun run() {
             if(System.currentTimeMillis()-activeTimeMillis>suspendTimeMillis){
                 //超时,记录间隔
-                addCodingTimeStep()
+                FileWorkerService.instance.postMessage("TIME-CLOSE ${currentFile?.path} ${System.currentTimeMillis()}")
             } else {
                 //继续轮询
                 println("轮询:${System.currentTimeMillis()-activeTimeMillis} $suspendTimeMillis")
@@ -56,19 +50,6 @@ class FileEditService{
         }
     }
 
-    /**
-     * 添加一个编码时间段
-     */
-    private fun addCodingTimeStep() {
-        val currentFile = currentFile
-        if (null != currentFile) {
-            val recordInfo = recordItems.get(currentFile)
-            if(null!=recordInfo){
-                recordInfo.addCodingTimeStep(System.currentTimeMillis())
-                println("file:$currentFile 添加编程时段:${recordInfo.codingTimeSteps.size}")
-            }
-        }
-    }
 
     fun install() {
         checkThread()
@@ -94,18 +75,10 @@ class FileEditService{
      */
     fun fileOpened(file: VirtualFile){
         println("打开文件:${file.name}")
-        var recordInfo = recordItems.get(file)
-        //结束上一个文件操作
-        addCodingTimeStep()
-        //记录新的文件信息
-        if(null!=recordInfo){
-            //记录开始编程时间
-            recordInfo.startCoding()
-        } else {
-            //生成记录,并保存
-            recordInfo= RecordInfo()
-            recordItems.put(file,recordInfo)
-        }
+        FileWorkerService.instance.postMessage("TIME-END ${currentFile?.path} ${System.currentTimeMillis()}")
+        //打开新文件
+        FileWorkerService.instance.postMessage("OPEN ${file.path} ${System.currentTimeMillis()}")
+        FileWorkerService.instance.postMessage("TIME-START ${file.path} ${System.currentTimeMillis()}")
         //记录当前打开文件
         this.currentFile=file
         //记录操作时间
@@ -117,19 +90,24 @@ class FileEditService{
     }
 
     /**
+     * 获得以当前项目为根目录的文件地址
+     */
+    private fun getProjectFilePath(file:VirtualFile):String{
+        return file.path
+    }
+
+    /**
      * 文件内容变化,此处可以细化
      * 当前每隔一段时间检测一下,比如10秒内,未编辑,则增加一个编程时间段.
      */
     fun fileContentChanged(file: VirtualFile,newText:CharSequence,oldText:CharSequence){
-        println("编辑内容:${file.name} newText:$newText oldText:$oldText")
         if(System.currentTimeMillis()-activeTimeMillis>suspendTimeMillis){
             //如果超时
             val currentFile=this.currentFile
             if(null!=currentFile){
                 //开始编程
-                val currentRecordItem = recordItems.get(currentFile)
-                println("开始编程")
-                currentRecordItem?.startCoding()
+                FileWorkerService.instance.postMessage("OPEN ${file.path} ${System.currentTimeMillis()}")
+                FileWorkerService.instance.postMessage("TIME-START ${file.path} ${System.currentTimeMillis()}")
             }
         }
         activeTimeMillis=System.currentTimeMillis()
@@ -141,10 +119,12 @@ class FileEditService{
      * 当文件关闭时
      */
     fun fileClosed(file: VirtualFile){
-        println("关闭文件:${file.name} valid:${file.isValid}")
-        val currentRecordItem = recordItems.get(file)
-        currentRecordItem?.addCodingTimeStep(System.currentTimeMillis())
-        cancelRequest(watchdogRunnable)
+        println("当前文件:${currentFile?.name} 关闭文件:${file.name} 是否是当前文件:${file==currentFile}")
+        if(file == currentFile){
+            FileWorkerService.instance.postMessage("TIME-END ${file.path} ${System.currentTimeMillis()}")
+            FileWorkerService.instance.postMessage("CLOSE ${file.path} ${System.currentTimeMillis()}")
+            cancelRequest(watchdogRunnable)
+        }
     }
 
     fun uninstall() {

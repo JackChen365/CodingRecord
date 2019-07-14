@@ -26,6 +26,7 @@
   <depends>org.jetbrains.kotlin</depends>
   <extensions defaultExtensionNs="com.intellij">
     <!-- Add your extensions here -->
+    <applicationService serviceImplementation="com.cz.code.record.service.FileWorkerService"/>
     <applicationService serviceImplementation="com.cz.code.record.service.FileEditService"/>
     <applicationConfigurable instance="com.cz.code.record.configurable.CodingRecordConfigurable"/>
   </extensions>
