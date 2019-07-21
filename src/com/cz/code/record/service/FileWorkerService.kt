@@ -1,11 +1,14 @@
 package com.cz.code.record.service
 
+import com.cz.code.record.Event
 import com.cz.code.record.checkDispatchThread
 import com.intellij.ide.util.PackageUtil
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.guessProjectDir
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiManager
 import java.io.File
 import java.io.FileOutputStream
@@ -18,6 +21,7 @@ import java.util.*
 class FileWorkerService : Thread("File worker") {
 
     companion object {
+        private const val CODING_RECORD=".CodingRecord"
         /**
          * 最大只存100条,100条之后阻塞
          */
@@ -36,10 +40,6 @@ class FileWorkerService : Thread("File worker") {
             get() = ServiceManager.getService(FileWorkerService::class.java)
     }
     /**
-     * 插件Project信息对象
-     */
-    private var project: Project?=null
-    /**
      * 消息队列
      */
     private val messageQueue = LinkedList<String>()
@@ -56,15 +56,13 @@ class FileWorkerService : Thread("File worker") {
     override fun run() {
         super.run()
         //检测project对象
-        val project=project?:throw IllegalThreadStateException("You should use startService to start this service!")
-        //检测project对象
         val timeFormatter = SimpleDateFormat("yyyy_MM_dd")
         //缓存文件
-        val projectDir = File(project.guessProjectDir()?.path,".record")
-        val cacheFile=File(projectDir,"${timeFormatter.format(Date())}.txt")
+        val folder = File(System.getProperty("java.io.tmpdir"),CODING_RECORD)
         try {
             //遍历消息
             while(!interrupted()){
+                val cacheFile=File(folder,"${timeFormatter.format(Date())}.txt")
                 //检测并写入消息
                 checkAndWriteMessage(cacheFile)
                 //如果检测到停止任务，弹出
@@ -77,7 +75,7 @@ class FileWorkerService : Thread("File worker") {
             e.printStackTrace()
         } finally {
             //写入剩下所有文件
-            checkAndWriteMessage(cacheFile)
+            writeAllMessage(File(folder,"${timeFormatter.format(Date())}.txt"))
         }
         println("写入服务终止！")
     }
@@ -88,11 +86,12 @@ class FileWorkerService : Thread("File worker") {
     private fun checkAndWriteMessage(cacheFile: File) {
         if (messageQueue.isNotEmpty()) {
             synchronized(LOCK) {
-                println("开始将文件写入文件,当前消息个数:${messageQueue.size}")
+                println("开始将文件写入文件:${cacheFile.path},当前消息个数:${messageQueue.size}")
                 //取出所有消息并记录
                 FileOutputStream(cacheFile,true).bufferedWriter().use { writer ->
                     while (!messageQueue.isEmpty()) {
                         val message = messageQueue.pollFirst()
+                        println("消息:$message")
                         writer.append(message + "\n")
                     }
                 }
@@ -105,33 +104,46 @@ class FileWorkerService : Thread("File worker") {
     }
 
     /**
-     * 创建操作目录
+     * 检测并写入消息
      */
-    private fun createSubdirectory(project: Project) {
-        val projectDir = project.guessProjectDir()
-        if (null != projectDir) {
-            val directory = PsiManager.getInstance(project).findDirectory(projectDir)
-            if (null != directory) {
-                WriteCommandAction.runWriteCommandAction(project) {
-                    PackageUtil.findOrCreateSubdirectory(directory, ".record")
+    private fun writeAllMessage(cacheFile: File) {
+        if (messageQueue.isNotEmpty()) {
+            println("开始写入文件:${cacheFile.path},剩余消息个数:${messageQueue.size}")
+            //取出所有消息并记录
+            FileOutputStream(cacheFile,true).bufferedWriter().use { writer ->
+                while (!messageQueue.isEmpty()) {
+                    val message = messageQueue.pollFirst()
+                    writer.append(message + "\n")
                 }
             }
         }
     }
 
     /**
+     * 创建操作目录
+     */
+    private fun createSubdirectory() {
+        val folder = File(System.getProperty("java.io.tmpdir"),CODING_RECORD)
+        if(!folder.exists()){
+            val defaultProject = ProjectManager.getInstance().defaultProject
+            WriteCommandAction.runWriteCommandAction(defaultProject) { folder.mkdir() }
+        }
+    }
+
+    /**
      * 启动服务
      */
-    fun startService(project: Project){
-        this.project=project
-        //创建操作目录
-        createSubdirectory(project)
-        //记录启动时间
-        activeTimeMillis=System.currentTimeMillis()
-        //设置运行标记
-        isRunning=true
+    fun startService(){
         //启动服务
-        this.start()
+        if(!isAlive){
+            //记录启动时间
+            activeTimeMillis=System.currentTimeMillis()
+            //检测目录是否存在
+            createSubdirectory()
+            //设置运行标记
+            isRunning=true
+            this.start()
+        }
     }
 
     /**
@@ -149,7 +161,8 @@ class FileWorkerService : Thread("File worker") {
      */
     fun postMessage(message:String){
         synchronized(LOCK){
-            //添加到队列
+            //添加消息到队列
+            println("消息:$message")
             messageQueue.offerLast(message)
             if(System.currentTimeMillis()-activeTimeMillis>MAX_WAIT_TIME){
                 //超过最大时间通知
@@ -158,6 +171,25 @@ class FileWorkerService : Thread("File worker") {
                 //超过最大个数通知
                 LOCK.notify()
             }
+        }
+    }
+
+    /**
+     * 添加消息到队列
+     */
+    fun postMessage(event:Event, file:VirtualFile?){
+        //添加到队列
+        var filePath= file?.path
+        //发送消息
+        postMessage("$event $filePath ${System.currentTimeMillis()}")
+    }
+
+    /**
+     * 主动通知唤醒
+     */
+    fun notifyService(){
+        synchronized(LOCK){
+            LOCK.notify()
         }
     }
 }

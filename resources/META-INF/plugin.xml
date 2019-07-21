@@ -28,6 +28,8 @@
     <!-- Add your extensions here -->
     <applicationService serviceImplementation="com.cz.code.record.service.FileWorkerService"/>
     <applicationService serviceImplementation="com.cz.code.record.service.FileEditService"/>
+    <applicationService serviceImplementation="com.cz.code.record.service.FileFilterService"/>
+
     <applicationConfigurable instance="com.cz.code.record.configurable.CodingRecordConfigurable"/>
   </extensions>
 
@@ -39,9 +41,6 @@
 
   <actions>
     <!-- Add your actions here -->
-    <action id="EditorBasics.EditorHandlerIllustration" class="com.cz.code.record.action.FileEditorAction" text="Editor Handler"
-            description="Illustrates how to plug an action in">
-    </action>
   </actions>
 
 </idea-plugin>

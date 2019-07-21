@@ -1,11 +1,13 @@
 package com.cz.code.record.service
 
+import com.cz.code.record.Event
 import com.cz.code.record.cancelRequest
 import com.cz.code.record.checkDispatchThread
 import com.cz.code.record.invokeLater
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.messages.MessageBusConnection
+import org.jetbrains.kotlin.idea.core.script.scriptRelatedModuleName
 
 /**
  * 文件编缉服务对象
@@ -27,6 +29,10 @@ class FileEditService{
      */
     private var activeTimeMillis=0L
     /**
+     * 轮询时间
+     */
+    private var loopTimeMillis=0L
+    /**
      * 当前操作文件
      */
     private var currentFile:VirtualFile?=null
@@ -39,12 +45,17 @@ class FileEditService{
      */
     private val watchdogRunnable= object :Runnable {
         override fun run() {
+            //记录轮询时间
+            if(System.currentTimeMillis()-loopTimeMillis> 2000){
+                //当前程序被挂起,可能是电脑休眠
+                FileWorkerService.instance.notifyService()
+            }
+            loopTimeMillis=System.currentTimeMillis()
             if(System.currentTimeMillis()-activeTimeMillis>suspendTimeMillis){
                 //超时,记录间隔
-                FileWorkerService.instance.postMessage("TIME-CLOSE ${currentFile?.path} ${System.currentTimeMillis()}")
+                FileWorkerService.instance.postMessage(Event.STOP_CODING,currentFile)
             } else {
                 //继续轮询
-                println("轮询:${System.currentTimeMillis()-activeTimeMillis} $suspendTimeMillis")
                 invokeLater(1000, this)
             }
         }
@@ -74,11 +85,14 @@ class FileEditService{
      * 文件打开
      */
     fun fileOpened(file: VirtualFile){
+        val currentFile=currentFile
+        if(null!=currentFile){
+            FileWorkerService.instance.postMessage(Event.STOP_CODING,currentFile)
+        }
         println("打开文件:${file.name}")
-        FileWorkerService.instance.postMessage("TIME-END ${currentFile?.path} ${System.currentTimeMillis()}")
         //打开新文件
-        FileWorkerService.instance.postMessage("OPEN ${file.path} ${System.currentTimeMillis()}")
-        FileWorkerService.instance.postMessage("TIME-START ${file.path} ${System.currentTimeMillis()}")
+        FileWorkerService.instance.postMessage(Event.OPEN_FILE,file)
+        FileWorkerService.instance.postMessage(Event.START_CODING,file)
         //记录当前打开文件
         this.currentFile=file
         //记录操作时间
@@ -87,6 +101,15 @@ class FileEditService{
         cancelRequest(watchdogRunnable)
         //继续观察
         invokeLater(1000, watchdogRunnable)
+    }
+
+    /**
+     * 文件选择变化
+     */
+    fun fileSelectionChanged(file: VirtualFile){
+        //按打开文件处理
+        println("选中文件:${file.name}")
+        fileOpened(file)
     }
 
     /**
@@ -106,8 +129,8 @@ class FileEditService{
             val currentFile=this.currentFile
             if(null!=currentFile){
                 //开始编程
-                FileWorkerService.instance.postMessage("OPEN ${file.path} ${System.currentTimeMillis()}")
-                FileWorkerService.instance.postMessage("TIME-START ${file.path} ${System.currentTimeMillis()}")
+                FileWorkerService.instance.postMessage(Event.OPEN_FILE,file)
+                FileWorkerService.instance.postMessage(Event.START_CODING,file)
             }
         }
         activeTimeMillis=System.currentTimeMillis()
@@ -121,9 +144,10 @@ class FileEditService{
     fun fileClosed(file: VirtualFile){
         println("当前文件:${currentFile?.name} 关闭文件:${file.name} 是否是当前文件:${file==currentFile}")
         if(file == currentFile){
-            FileWorkerService.instance.postMessage("TIME-END ${file.path} ${System.currentTimeMillis()}")
-            FileWorkerService.instance.postMessage("CLOSE ${file.path} ${System.currentTimeMillis()}")
+            FileWorkerService.instance.postMessage(Event.STOP_CODING,file)
+            FileWorkerService.instance.postMessage(Event.CLOSE_FILE,file)
             cancelRequest(watchdogRunnable)
+            currentFile=null
         }
     }
 
